@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+//#![windows_subsystem = "windows"]
 
 use autotiling::{
     log::Logger,
@@ -25,8 +25,8 @@ async fn main() -> anyhow::Result<()> {
                 ws_stream.send_toggle_tiling().await?;
                 Logger::log_toggled();
             }
-            Some(Err(e)) => {
-                Logger::log_tiling_error(&format!("Error processing message: {}", e));
+            Some(Err(err)) => {
+                Logger::log_tiling_error(&err.root_cause());
                 break;
             }
             None => (),

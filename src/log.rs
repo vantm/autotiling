@@ -25,8 +25,8 @@ impl Logger {
         }
     }
 
-    pub fn log_tiling_error(msg: &str) {
-        eprintln!("Error while listening wm events: {}", msg);
+    pub fn log_tiling_error(err: &impl std::error::Error) {
+        eprintln!("Error while listening wm events: {}", err);
     }
 
     pub fn log_disconnected() {
