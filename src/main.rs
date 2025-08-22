@@ -1,75 +1,35 @@
 #![windows_subsystem = "windows"]
 
-use std::error::Error;
-
-use futures::{SinkExt, StreamExt};
-use serde::Deserialize;
-use tokio::net::TcpStream;
-use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
-    tungstenite::{Message, Utf8Bytes},
+use autotiling::{
+    log::Logger,
+    model::RootResponse,
+    ws::{WebSocketStreamExt, connect_websocket_async},
 };
-
-#[derive(Debug, Deserialize)]
-struct RootResponse {
-    data: Option<Data>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Data {
-    #[serde(rename = "managedWindow")]
-    managed_window: Option<ManagedWindow>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ManagedWindow {
-    #[serde(rename = "tilingSize")]
-    tiling_size: Option<f64>,
-}
+use futures::StreamExt;
+use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let uri = "ws://localhost:6123";
+async fn main() -> anyhow::Result<()> {
+    let mut ws_stream = connect_websocket_async().await?;
 
-    Logger::log_connecting(uri);
+    ws_stream.subscribe().await?;
 
-    let (mut ws_stream, _) = connect_async(uri).await?;
-
-    Logger::log_connected(uri);
-
-    let sub_message = Message::Text("sub -e window_managed".into());
-    ws_stream.send(sub_message).await?;
-
-    Logger::log_subscribed();
-
-    while let Some(msg_result) = ws_stream.next().await {
-        match msg_result {
-            Ok(msg) => {
-                if let Message::Text(text) = msg {
-                    match serde_json::from_str::<RootResponse>(&text) {
-                        Ok(json_response) => {
-                            let size_percentage = json_response
-                                .data
-                                .and_then(|data| data.managed_window)
-                                .and_then(|mw| mw.tiling_size);
-
-                            if let Some(size) = size_percentage {
-                                if size <= 0.5 {
-                                    ws_stream.send_toggle_tiling().await?;
-                                    Logger::log_toggled(size);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            Logger::log_tiling_error(&e, &text);
-                        }
-                    }
-                }
+    while let Some(result) = ws_stream.next().await {
+        match result
+            .map_err(|err| anyhow::Error::new(err))
+            .map(get_message_text)
+            .transpose()
+            .and_then(|result| result.and_then(validate_tiling_size).transpose())
+        {
+            Some(Ok(_)) => {
+                ws_stream.send_toggle_tiling().await?;
+                Logger::log_toggled();
             }
-            Err(e) => {
-                Logger::log_websocket_error(&e);
+            Some(Err(e)) => {
+                Logger::log_tiling_error(&format!("Error processing message: {}", e));
                 break;
             }
+            None => (),
         }
     }
 
@@ -77,50 +37,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-trait WebSocketStreamExt {
-    async fn send_toggle_tiling(&mut self) -> Result<(), tokio_tungstenite::tungstenite::Error>;
-}
-
-const COMMAND_MESSAGE: Message =
-    Message::Text(Utf8Bytes::from_static("command toggle-tiling-direction"));
-
-impl WebSocketStreamExt for WebSocketStream<MaybeTlsStream<TcpStream>> {
-    async fn send_toggle_tiling(&mut self) -> Result<(), tokio_tungstenite::tungstenite::Error> {
-        self.send(COMMAND_MESSAGE).await
+fn get_message_text(msg: Message) -> Option<String> {
+    if let Message::Text(text) = msg {
+        Some(text.to_string())
+    } else {
+        None
     }
 }
 
-struct Logger {}
-
-impl Logger {
-    fn log_connecting(uri: &str) {
-        println!("Attempting to connect to {}", uri);
-    }
-
-    fn log_connected(uri: &str) {
-        println!("Successfully connected to {}", uri);
-    }
-
-    fn log_subscribed() {
-        println!("Sent: 'sub -e window_managed'");
-    }
-
-    fn log_toggled(size: f64) {
-        println!(
-            "Sent: 'command toggle-tiling-direction' (tilingSize: {})",
-            size
-        );
-    }
-
-    fn log_tiling_error(e: &dyn Error, text: &str) {
-        eprintln!("Failed to parse JSON: {} (Original message: {})", e, text);
-    }
-
-    fn log_websocket_error(e: &dyn Error) {
-        eprintln!("WebSocket error: {}", e);
-    }
-
-    fn log_disconnected() {
-        println!("WebSocket connection closed.");
-    }
+fn validate_tiling_size(json_text: String) -> anyhow::Result<Option<()>> {
+    serde_json::from_str::<RootResponse>(json_text.as_str())
+        .map_err(|e| anyhow::Error::new(e))
+        .map(|json| {
+            json.data
+                .and_then(|data| data.managed_window)
+                .and_then(|mw| mw.tiling_size)
+                .and_then(|size| if size <= 0.5 { Some(()) } else { None })
+        })
 }
