@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
