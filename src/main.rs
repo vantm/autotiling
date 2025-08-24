@@ -2,11 +2,10 @@
 
 use autotiling::{
     log::Logger,
-    model::RootResponse,
+    util::{get_message_text, validate_tiling_size},
     ws::{WebSocketStreamExt, connect_websocket_async},
 };
 use futures::StreamExt;
-use tokio_tungstenite::tungstenite::Message;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -19,8 +18,11 @@ async fn main() -> anyhow::Result<()> {
             .map_err(|err| anyhow::Error::new(err))
             .map(get_message_text)
             .transpose()
-            .and_then(|result| result.and_then(validate_tiling_size).transpose())
-        {
+            .and_then(|result| {
+                result
+                    .and_then(|str| validate_tiling_size(str.as_str()))
+                    .transpose()
+            }) {
             Some(Ok(_)) => {
                 ws_stream.send_toggle_tiling().await?;
                 Logger::log_toggled();
@@ -35,23 +37,4 @@ async fn main() -> anyhow::Result<()> {
 
     Logger::log_disconnected();
     Ok(())
-}
-
-fn get_message_text(msg: Message) -> Option<String> {
-    if let Message::Text(text) = msg {
-        Some(text.to_string())
-    } else {
-        None
-    }
-}
-
-fn validate_tiling_size(json_text: String) -> anyhow::Result<Option<()>> {
-    serde_json::from_str::<RootResponse>(json_text.as_str())
-        .map_err(|e| anyhow::Error::new(e))
-        .map(|json| {
-            json.data
-                .and_then(|data| data.managed_window)
-                .and_then(|mw| mw.tiling_size)
-                .and_then(|size| if size <= 0.5 { Some(()) } else { None })
-        })
 }
