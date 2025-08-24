@@ -12,8 +12,6 @@ const URI: &str = "ws://localhost:6123";
 const TOGGLE_MESSAGE: Message =
     Message::Text(Utf8Bytes::from_static("command toggle-tiling-direction"));
 
-const SUBSCRIBE_MESSAGE: Message = Message::Text(Utf8Bytes::from_static("sub -e window_managed"));
-
 pub async fn connect_websocket_async()
 -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, tungstenite::error::Error> {
     Logger::log_connecting(URI);
@@ -31,7 +29,8 @@ pub trait WebSocketStreamExt {
 
 impl WebSocketStreamExt for WebSocketStream<MaybeTlsStream<TcpStream>> {
     async fn subscribe(&mut self) -> anyhow::Result<()> {
-        self.send(SUBSCRIBE_MESSAGE).await?;
+        let message: Message = Message::Text(Utf8Bytes::from_static("sub -e window_managed"));
+        self.send(message).await?;
         Logger::log_subscribed();
         Ok(())
     }
