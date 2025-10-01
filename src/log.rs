@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 pub struct Logger {}
 
 impl Logger {
@@ -25,13 +27,19 @@ impl Logger {
         }
     }
 
-    pub fn log_tiling_error(err: &impl std::error::Error) {
+    pub fn log_tiling_error(err: &impl Display) {
         eprintln!("Error while listening wm events: {}", err);
     }
 
     pub fn log_disconnected() {
         if cfg!(debug_assertions) {
             println!("WebSocket connection closed.");
+        }
+    }
+
+    pub fn log_cancel_signal() {
+        if cfg!(debug_assertions) {
+            println!("Received Ctrl-C, shutting down.");
         }
     }
 }

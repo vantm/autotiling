@@ -10,14 +10,18 @@ pub fn get_message_text(msg: Message) -> Option<String> {
     }
 }
 
-pub fn validate_tiling_size(json_text: &str) -> anyhow::Result<Option<()>> {
+pub fn is_tiling_toggleable(json_text: &str) -> anyhow::Result<bool> {
     serde_json::from_str::<RootResponse>(json_text)
         .map_err(|e| anyhow::Error::new(e))
         .map(|json| {
-            json.data
+            let size_result = json
+                .data
                 .and_then(|data| data.managed_window)
-                .and_then(|mw| mw.tiling_size)
-                .and_then(|size| if size <= 0.5 { Some(()) } else { None })
+                .and_then(|mw| mw.tiling_size);
+            match size_result {
+                Some(size) if size < 0.5 => true,
+                _ => false,
+            }
         })
 }
 
@@ -43,19 +47,19 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_tiling_size() {
+    fn test_is_tiling_toggleable() {
         let json = r#"{"data":{"managedWindow":{"tilingSize":0.5}}}"#;
         assert_eq!(
-            validate_tiling_size(json).unwrap(),
-            Some(()),
-            "Expected tiling size to be valid"
+            is_tiling_toggleable(json).unwrap(),
+            true,
+            "Expected tiling size to be toggleable"
         );
 
         let json = r#"{"data":{"managedWindow":{"tilingSize":0.501}}}"#;
         assert_eq!(
-            validate_tiling_size(json).unwrap(),
-            None,
-            "Expected tiling size to be invalid"
+            is_tiling_toggleable(json).unwrap(),
+            false,
+            "Expected tiling size to be not toggleable"
         );
     }
 }
